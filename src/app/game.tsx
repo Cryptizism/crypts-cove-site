@@ -1,17 +1,17 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
-import { gameFailure, gameSuccess } from "./actions/actions";
+import { gameFailure, gameGetAttempts, gameSuccess } from "./actions/actions";
 
 export type Shape = "triangle" | "star" | "kite";
 
 export default function gamePage({shape} : {shape: Shape}) {
     const [info, setInfo] = useState("Once you click on the shape, you have a few seconds to trace it in one press to join the Discord!");
     const [isPlaying, setIsPlaying] = useState(false);
-    const [failed, setFailed] = useState(false);
     const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
     const [visitedPoints, setVisitedPoints] = useState<Set<number>>(new Set());
-    const [timeLeft, setTimeLeft] = useState(15);
+    const [timeLeft, setTimeLeft] = useState(20);
+    const [attempts, setAttempts] = useState(0);
     const [distanceTolerance, setDistanceTolerance] = useState(7.5);
 
     const svgContainerRef = useRef<HTMLDivElement>(null);
@@ -23,15 +23,29 @@ export default function gamePage({shape} : {shape: Shape}) {
         kite: "200,20 350,120 200,380 50,120",
     };
 
+    const fetchAttempts = async () => {
+        const gameAttempts = await gameGetAttempts();
+        setAttempts(gameAttempts || 0);
+    };
+
+    const gameFailureCycle = async () => {
+        await gameFailure();
+        fetchAttempts();
+    };
+
+    useEffect(() => {
+        fetchAttempts();
+    }, []);
+
     useEffect(() => {
         if (isPlaying && timeLeft > 0) {
             const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
             return () => clearTimeout(timer);
         }
         if (timeLeft === 0) {
-            setFailed(true);
             setIsPlaying(false);
             setInfo("Time's up! Game Over!");
+            gameFailureCycle();
         }
     }, [isPlaying, timeLeft]);
 
@@ -47,35 +61,38 @@ export default function gamePage({shape} : {shape: Shape}) {
         }
     };
 
-    const handleStart = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
-        if (isPlaying) return;
+    const handleStart = async (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+        if (isPlaying || attempts >= 3) return;
         const { x, y } = normalizeEvent(e);
         setStartPoint({ x, y });
         setVisitedPoints(new Set());
         setInfo("Tracing the shape... stay close to the edges!");
-        setFailed(false);
         setIsPlaying(true);
-        setTimeLeft(15);
+        if (shape === "star"){
+            setTimeLeft(30);
+        } else {
+            setTimeLeft(20);
+        }
         clearTrail();
     };
 
     const handleMove = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
-        if (!isPlaying || failed) return;
+        if (!isPlaying || attempts >= 3) return;
         const { x, y } = normalizeEvent(e);
         const points = getShapePoints();
         if (getNearestDistance(points, x, y) > distanceTolerance) {
-            setFailed(true);
             setIsPlaying(false);
             setInfo("You went too far! Game Over!");
-            gameFailure();
+            gameFailureCycle();
+            fetchAttempts();
             return;
         }
         setVisitedPoints((prev) => new Set(prev).add(getNearestPointIndex(points, x, y)));
         drawTrail(x, y);
     };
 
-    const handleEnd = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
-        if (!isPlaying || failed || !startPoint) return;
+    const handleEnd = async (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+        if (!isPlaying || attempts >= 3 || !startPoint) return;
         const { x, y } = normalizeEvent(e);
         const points = getShapePoints();
         if (
@@ -85,10 +102,12 @@ export default function gamePage({shape} : {shape: Shape}) {
             setInfo("Congratulations! You have automatically been added to the Discord!");
             gameSuccess();
         } else {
-            setInfo("You didn't return to your starting point or missed points. Try again tomorrow...");
-            gameFailure();
+            setInfo("You didn't return to your starting point or missed points.");
+            await gameFailureCycle();
         }
         setIsPlaying(false);
+
+        fetchAttempts();
     };
 
     const getShapePoints = (): [number, number][] =>
@@ -155,6 +174,9 @@ export default function gamePage({shape} : {shape: Shape}) {
                     Time left: {timeLeft} seconds
                 </div>
             )}
+            <div className="text-center mt-2">
+                You have {3 - attempts} attempts left today.
+            </div>
         </>
     );
 };

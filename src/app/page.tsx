@@ -50,7 +50,7 @@ export default async function HomePage(props: {
       },
     }
   })
-  if (result?.success == false) {
+  if (result?.success == false && result?.attempts >= 3) {
     // return a simple countdown page
     const nextTime = new Date(new Date(result.attemptDate).getTime() + 86400000);
     return <Countdown date={ nextTime } />

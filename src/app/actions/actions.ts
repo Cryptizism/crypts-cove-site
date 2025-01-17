@@ -17,9 +17,29 @@ export async function gameFailure(){
             }
         },
         data: {
-            success: false
+            success: false,
+            attempts: {
+                increment: 1
+            }
         }
     })
+}
+
+export async function gameGetAttempts(){
+    // check if logged in with next auth
+    const session = await auth()
+    // if not logged in, show login button
+    if (!session || !session.user) return;
+    // change attempt today success to false
+    const result = await db.result.findFirst({
+        where: {
+            userId: session.user.id,
+            attemptDate: {
+                gte: new Date(new Date().setHours(0, 0, 0, 0))
+            }
+        }
+    })
+    return result?.attempts;
 }
 
 export async function gameSuccess(){
